@@ -1,9 +1,14 @@
 package io.github.ritwickrajmakhal;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.azure.core.credential.AzureKeyCredential;
+import com.azure.core.util.Context;
+import com.azure.search.documents.SearchClient;
+import com.azure.search.documents.SearchClientBuilder;
 import com.azure.search.documents.indexes.SearchIndexClient;
 import com.azure.search.documents.indexes.SearchIndexClientBuilder;
 import com.azure.search.documents.indexes.SearchIndexerClient;
@@ -17,13 +22,15 @@ import com.azure.search.documents.indexes.models.SearchIndexerDataSourceConnecti
 import com.azure.search.documents.indexes.models.SearchIndexerDataSourceType;
 import com.azure.search.documents.indexes.models.SearchIndexerSkill;
 import com.azure.search.documents.indexes.models.SearchIndexerSkillset;
+import com.azure.search.documents.models.SearchOptions;
+import com.azure.search.documents.models.SearchResult;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.ritwickrajmakhal.config.SearchIndexConfig;
 import io.github.ritwickrajmakhal.config.SearchIndexerConfig;
 import io.github.ritwickrajmakhal.config.SkillsetConfig;
 
-public class AISearchClient {
+public class AzureSearchClient {
     private final static Dotenv dotenv = Dotenv.load();
     private final static String uuid = UUID.randomUUID().toString();
     private static final String SEARCH_ENDPOINT = dotenv.get("AZURE_AI_SEARCH_ENDPOINT");
@@ -39,10 +46,12 @@ public class AISearchClient {
     private SearchIndexer indexer;
 
     // clients
-    private SearchIndexerClient indexerClient;
-    private SearchIndexClient indexClient;
+    private final SearchIndexerClient indexerClient;
+    private final SearchIndexClient indexClient;
+    private final SearchClient searchClient;
 
-    public AISearchClient(final String blobStorageConnectionString, final String containerName, final String folder) {
+    public AzureSearchClient(final String blobStorageConnectionString, final String containerName,
+            final String folder) {
         this.blobStorageConnectionString = blobStorageConnectionString;
         this.containerName = containerName;
         this.folder = folder;
@@ -69,6 +78,12 @@ public class AISearchClient {
 
         // Create an indexer that uses the skillset and data source and loads the index
         indexer = createSearchIndexer(indexerClient, dataSource, index, skillset);
+
+        searchClient = new SearchClientBuilder()
+                .endpoint(SEARCH_ENDPOINT)
+                .credential(new AzureKeyCredential(SEARCH_API_KEY))
+                .indexName(index.getName())
+                .buildClient();
     }
 
     private static SearchIndexerSkillset createSkillset(final SearchIndexerClient client) {
@@ -142,6 +157,17 @@ public class AISearchClient {
                 this.blobStorageConnectionString,
                 dataContainer,
                 null);
+    }
+
+    public List<Map<String, Object>> search(String query, int maxResults) {
+        SearchOptions options = new SearchOptions()
+                .setTop(maxResults);
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (SearchResult result : searchClient.search(query, options, Context.NONE)) {
+            results.add(result.getDocument(Map.class));
+        }
+        return results;
     }
 
     public void cleanUp() {
