@@ -35,15 +35,15 @@ public class AzureSearchClient {
     private final static String uuid = UUID.randomUUID().toString();
     private static final String SEARCH_ENDPOINT = dotenv.get("AZURE_AI_SEARCH_ENDPOINT");
     private static final String SEARCH_API_KEY = dotenv.get("AZURE_AI_SEARCH_API_KEY");
-    private String blobStorageConnectionString;
-    private String containerName;
-    private String folder;
+    private final String blobStorageConnectionString;
+    private final String containerName;
+    private final String folder;
 
     // resources
-    private SearchIndexerDataSourceConnection dataSource;
-    private SearchIndex index;
-    private SearchIndexerSkillset skillset;
-    private SearchIndexer indexer;
+    private final SearchIndexerDataSourceConnection dataSource;
+    private final SearchIndex index;
+    private final SearchIndexerSkillset skillset;
+    private final SearchIndexer indexer;
 
     // clients
     private final SearchIndexerClient indexerClient;
@@ -168,6 +168,23 @@ public class AzureSearchClient {
             results.add(result.getDocument(Map.class));
         }
         return results;
+    }
+
+    /**
+     * Runs the indexer manually to update the search index
+     * 
+     * @return true if the indexer was successfully triggered, false otherwise
+     */
+    public boolean runIndexer() {
+        try {
+            // Run the indexer
+            indexerClient.runIndexer(indexer.getName());
+            System.out.println("🔄 Search indexer run triggered successfully.");
+            return true;
+        } catch (Exception e) {
+            System.err.println("❌ Error running indexer: " + e.getMessage());
+            return false;
+        }
     }
 
     public void cleanUp() {
