@@ -1,7 +1,11 @@
 package io.github.ritwickrajmakhal;
 
 import io.github.cdimascio.dotenv.Dotenv;
+import io.github.ritwickrajmakhal.handlers.DeleteBlobHandler;
+import io.github.ritwickrajmakhal.handlers.DownloadBlobHandler;
+import io.github.ritwickrajmakhal.handlers.RenameBlobHandler;
 import io.github.ritwickrajmakhal.handlers.SearchBlobsHandler;
+import io.github.ritwickrajmakhal.handlers.UploadFileHandler;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,7 +43,8 @@ public class Main {
         System.out.print("Please enter your folder (path) if any otherwise press enter: ");
         final String folder = sc.nextLine();
 
-        // BlobClient blobClient = new BlobClient(connectionString, containerName);
+        // Initialize BlobClient
+        BlobClient blobClient = new BlobClient(connectionString, containerName);
 
         // Initialize Azure Search client
         AzureSearchClient searchClient = new AzureSearchClient(connectionString, containerName, folder);
@@ -52,7 +57,7 @@ public class Main {
                     .buildClient();
 
             // Start interactive chat
-            startInteractiveChat(sc, client, searchClient);
+            startInteractiveChat(sc, client, searchClient, blobClient);
         } catch (Exception e) {
             System.err.println("❌ Error: " + e.getMessage());
             System.exit(1);
@@ -62,7 +67,8 @@ public class Main {
         }
     }
 
-    private static void startInteractiveChat(Scanner sc, OpenAIClient client, AzureSearchClient searchClient) {
+    private static void startInteractiveChat(Scanner sc, OpenAIClient client, AzureSearchClient searchClient,
+            BlobClient blobClient) {
         List<ChatRequestMessage> chatHistory = new ArrayList<>();
         List<FunctionDefinition> functions = FunctionRegistry.getBlobFunctionDefinitions();
 
@@ -71,6 +77,10 @@ public class Main {
 
         // Register function handlers
         functionRegistry.registerHandler("search_blobs", new SearchBlobsHandler(searchClient));
+        functionRegistry.registerHandler("upload_file", new UploadFileHandler(blobClient, searchClient));
+        functionRegistry.registerHandler("download_blob", new DownloadBlobHandler(blobClient));
+        functionRegistry.registerHandler("delete_blob", new DeleteBlobHandler(blobClient, searchClient));
+        functionRegistry.registerHandler("rename_blob", new RenameBlobHandler(blobClient, searchClient));
 
         chatHistory.add(new ChatRequestSystemMessage(
                 "You are a helpful assistant. You can answer questions about Azure Blob Storage using the knowledge base."));
