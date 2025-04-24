@@ -11,8 +11,6 @@ import java.io.InputStream;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.List;
 
 public class BlobClient {
     private BlobServiceClient blobServiceClient;
@@ -25,22 +23,6 @@ public class BlobClient {
                 .buildClient();
 
         blobContainerClient = blobServiceClient.getBlobContainerClient(containerName);
-    }
-
-    public BlobServiceClient getBlobServiceClient() {
-        return blobServiceClient;
-    }
-
-    // List all blobs with metadata ✅
-    public List<String> listBlobs() {
-        List<String> blobDetails = new ArrayList<>();
-        blobContainerClient.listBlobs().forEach(blobItem -> {
-            blobDetails.add(String.format("Name: %s, Size: %d, Last Modified: %s",
-                    blobItem.getName(),
-                    blobItem.getProperties().getContentLength(),
-                    blobItem.getProperties().getLastModified()));
-        });
-        return blobDetails;
     }
 
     // Upload a file ✅

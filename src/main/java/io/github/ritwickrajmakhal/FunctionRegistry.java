@@ -15,27 +15,6 @@ public class FunctionRegistry {
     public static List<FunctionDefinition> getBlobFunctionDefinitions() {
         List<FunctionDefinition> functions = new ArrayList<>();
 
-        // List blobs function
-        functions.add(new FunctionDefinition("list_blobs")
-            .setDescription("Lists all blobs in the container with metadata")
-            .setParameters(BinaryData.fromObject(
-                Map.of(
-                    "type", "object",
-                    "properties", Map.of(
-                        "prefix", Map.of(
-                            "type", "string",
-                            "description", "Optional prefix to filter blobs"
-                        ),
-                        "maxResults", Map.of(
-                            "type", "integer",
-                            "description", "Maximum number of results to return"
-                        )
-                    ),
-                    "required", List.of()
-                )
-            ))
-        );
-
         // Upload file function
         functions.add(new FunctionDefinition("upload_file")
             .setDescription("Uploads a file to the container")
@@ -112,6 +91,7 @@ public class FunctionRegistry {
             ))
         );
 
+        // Search blobs function (Azure AI Search service)
         functions.add(new FunctionDefinition("search_blobs")
             .setDescription("Search for blobs in Azure Storage by query")
             .setParameters(BinaryData.fromObject(
