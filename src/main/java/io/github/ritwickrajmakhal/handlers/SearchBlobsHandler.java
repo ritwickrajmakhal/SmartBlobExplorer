@@ -2,10 +2,8 @@ package io.github.ritwickrajmakhal.handlers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,7 +20,7 @@ public class SearchBlobsHandler implements FunctionHandler {
     }
 
     @Override
-    public String execute(JsonNode args) throws Exception {
+    public String execute(final JsonNode args) throws Exception {
         String query = args.has("query") ? args.get("query").asText() : "";
         int maxResults = args.has("maxResults") ? args.get("maxResults").asInt() : 5;
         boolean includeContent = args.has("includeContent") ? args.get("includeContent").asBoolean() : false;
@@ -75,18 +73,18 @@ public class SearchBlobsHandler implements FunctionHandler {
         return mapper.writeValueAsString(response);
     }
     
-    private void addIfExists(Map<String, Object> source, Map<String, Object> target, String key) {
+    private void addIfExists(final Map<String, Object> source, final Map<String, Object> target, final String key) {
         addIfExists(source, target, key, key);
     }
     
-    private void addIfExists(Map<String, Object> source, Map<String, Object> target, 
+    private void addIfExists(final Map<String, Object> source, final Map<String, Object> target, 
                             String sourceKey, String targetKey) {
         if (source.containsKey(sourceKey) && source.get(sourceKey) != null) {
             target.put(targetKey, source.get(sourceKey));
         }
     }
     
-    private String truncateContent(String content, int maxLength) {
+    private String truncateContent(final String content, final int maxLength) {
         if (content == null) return "";
         return content.length() <= maxLength ? 
                content : content.substring(0, maxLength) + "...";
