@@ -1,6 +1,7 @@
 package io.github.ritwickrajmakhal;
 
 import io.github.cdimascio.dotenv.Dotenv;
+import io.github.ritwickrajmakhal.handlers.SearchBlobsHandler;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,10 +11,14 @@ import com.azure.ai.openai.OpenAIClient;
 import com.azure.ai.openai.OpenAIClientBuilder;
 import com.azure.ai.openai.models.ChatCompletions;
 import com.azure.ai.openai.models.ChatCompletionsOptions;
+import com.azure.ai.openai.models.ChatRequestAssistantMessage;
+import com.azure.ai.openai.models.ChatRequestFunctionMessage;
 import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatRequestSystemMessage;
 import com.azure.ai.openai.models.ChatRequestUserMessage;
 import com.azure.ai.openai.models.ChatResponseMessage;
+import com.azure.ai.openai.models.FunctionCallConfig;
+import com.azure.ai.openai.models.FunctionDefinition;
 import com.azure.core.credential.AzureKeyCredential;
 
 public class Main {
@@ -25,7 +30,7 @@ public class Main {
         System.out.println("Your intelligent CLI assistant for exploring Azure Blob Storage.");
         System.out.println("--------------------------------------------------------------");
 
-        System.out.print("Please enter your storage acccount connection string: ");
+        System.out.print("Please enter your storage account connection string: ");
         final String connectionString = sc.nextLine();
 
         System.out.print("Please enter your container name: ");
@@ -34,8 +39,10 @@ public class Main {
         System.out.print("Please enter your folder (path) if any otherwise press enter: ");
         final String folder = sc.nextLine();
 
-        // Create a BlobContainerClient using the SAS URL
-        AISearchClient searchClient = new AISearchClient(connectionString, containerName, folder);
+        // BlobClient blobClient = new BlobClient(connectionString, containerName);
+
+        // Initialize Azure Search client
+        AzureSearchClient searchClient = new AzureSearchClient(connectionString, containerName, folder);
 
         try {
             // Initialize OpenAI client
@@ -45,22 +52,29 @@ public class Main {
                     .buildClient();
 
             // Start interactive chat
-            startInteractiveChat(sc, client);
+            startInteractiveChat(sc, client, searchClient);
         } catch (Exception e) {
-            System.err.println("❌ Error connecting to container: " + e.getMessage());
+            System.err.println("❌ Error: " + e.getMessage());
             System.exit(1);
+        } finally {
+            searchClient.cleanUp();
+            sc.close();
         }
-        searchClient.cleanUp();
-        sc.close();
     }
 
-    private static void startInteractiveChat(Scanner sc, OpenAIClient client) {
-        // Initialize chat history with system message
+    private static void startInteractiveChat(Scanner sc, OpenAIClient client, AzureSearchClient searchClient) {
         List<ChatRequestMessage> chatHistory = new ArrayList<>();
-        chatHistory.add(new ChatRequestSystemMessage(
-                "You are a helpful assistant."));
+        List<FunctionDefinition> functions = FunctionRegistry.getBlobFunctionDefinitions();
 
-        // Welcome message
+        // Initialize function registry
+        FunctionCallRegistry functionRegistry = new FunctionCallRegistry();
+
+        // Register function handlers
+        functionRegistry.registerHandler("search_blobs", new SearchBlobsHandler(searchClient));
+
+        chatHistory.add(new ChatRequestSystemMessage(
+                "You are a helpful assistant. You can answer questions about Azure Blob Storage using the knowledge base."));
+
         System.out.println("\n✨ Interactive chat started. Type your message or commands.");
         System.out.println("Type /? for help or /exit to quit.\n");
 
@@ -70,7 +84,6 @@ public class Main {
             System.out.print(">>> ");
             String userInput = sc.nextLine().trim();
 
-            // Handle special commands
             if (userInput.equalsIgnoreCase("/exit") || userInput.equalsIgnoreCase("/quit")) {
                 chatting = false;
                 System.out.println("Goodbye! 👋");
@@ -80,10 +93,13 @@ public class Main {
                 continue;
             }
 
-            // Handle regular chat messages
             try {
                 // Add user message to history
                 chatHistory.add(new ChatRequestUserMessage(userInput));
+
+                if (chatHistory.size() > 10) {
+                    chatHistory = chatHistory.subList(chatHistory.size() - 10, chatHistory.size());
+                }
 
                 // Get response from OpenAI
                 ChatCompletions chatCompletions = client.getChatCompletions(
@@ -91,17 +107,50 @@ public class Main {
                         new ChatCompletionsOptions(chatHistory)
                                 .setMaxTokens(4096)
                                 .setTemperature(0.7)
-                                .setTopP(0.95));
+                                .setTopP(0.95).setFunctions(functions).setFunctionCall(FunctionCallConfig.AUTO));
 
-                // Display the response
                 if (!chatCompletions.getChoices().isEmpty()) {
-                    ChatResponseMessage message = chatCompletions.getChoices().get(0).getMessage();
-                    System.out.println(message.getContent());
+                    ChatResponseMessage responseMessage = chatCompletions.getChoices().get(0).getMessage();
 
-                    // Keep chat history from growing too large
-                    if (chatHistory.size() > 21) { // system message + 10 exchanges
-                        // Remove oldest user-assistant exchange but keep system message
-                        chatHistory.subList(1, 3).clear();
+                    if (responseMessage.getFunctionCall() != null) {
+                        String functionName = responseMessage.getFunctionCall().getName();
+                        String arguments = responseMessage.getFunctionCall().getArguments();
+
+                        System.out.println("🔧 Calling function: " + functionName);
+
+                        // Execute the function using the registry
+                        if (functionRegistry.hasHandler(functionName)) {
+                            try {
+                                String functionResponse = functionRegistry.executeFunction(functionName, arguments);
+
+                                // Add function call and response to chat history
+                                chatHistory.add(new ChatRequestAssistantMessage(responseMessage.getContent())
+                                        .setFunctionCall(responseMessage.getFunctionCall()));
+                                chatHistory.add(new ChatRequestFunctionMessage(functionName, functionResponse));
+
+                                // Get a final response from the model
+                                ChatCompletions followUpCompletions = client.getChatCompletions(
+                                        dotenv.get("AZURE_AI_MODEL_DEPLOYMENT"),
+                                        new ChatCompletionsOptions(chatHistory)
+                                                .setMaxTokens(4096)
+                                                .setTemperature(0.7)
+                                                .setFunctions(functions)
+                                                .setFunctionCall(FunctionCallConfig.AUTO));
+
+                                // Process the follow-up response (recursive)
+                                processCompletionResponse(followUpCompletions, chatHistory, client, functionRegistry,
+                                        functions);
+                            } catch (Exception e) {
+                                System.err.println("❌ Error executing function: " + e.getMessage());
+                            }
+                        } else {
+                            System.err.println("⚠️ No handler registered for function: " + functionName);
+                        }
+                    } else {
+                        // Regular text response
+                        String content = responseMessage.getContent();
+                        System.out.println(content);
+                        chatHistory.add(new ChatRequestAssistantMessage(content));
                     }
                 } else {
                     System.out.println("No response received.");
@@ -109,6 +158,60 @@ public class Main {
             } catch (Exception e) {
                 System.err.println("❌ Error: " + e.getMessage());
             }
+        }
+    }
+
+    private static void processCompletionResponse(
+            ChatCompletions completions,
+            List<ChatRequestMessage> chatHistory,
+            OpenAIClient client,
+            FunctionCallRegistry functionRegistry,
+            List<FunctionDefinition> functions) {
+
+        if (!completions.getChoices().isEmpty()) {
+            ChatResponseMessage message = completions.getChoices().get(0).getMessage();
+
+            if (message.getFunctionCall() != null) {
+                String functionName = message.getFunctionCall().getName();
+                String arguments = message.getFunctionCall().getArguments();
+
+                System.out.println("🔧 Calling function: " + functionName);
+
+                if (functionRegistry.hasHandler(functionName)) {
+                    try {
+                        String functionResponse = functionRegistry.executeFunction(functionName, arguments);
+
+                        chatHistory.add(new ChatRequestAssistantMessage(message.getContent())
+                                .setFunctionCall(message.getFunctionCall()));
+                        chatHistory.add(new ChatRequestFunctionMessage(functionName, functionResponse));
+
+                        ChatCompletions followUpCompletions = client.getChatCompletions(
+                                dotenv.get("AZURE_AI_MODEL_DEPLOYMENT"),
+                                new ChatCompletionsOptions(chatHistory)
+                                        .setMaxTokens(4096)
+                                        .setTemperature(0.7)
+                                        .setFunctions(functions)
+                                        .setFunctionCall(FunctionCallConfig.AUTO));
+
+                        processCompletionResponse(followUpCompletions, chatHistory, client, functionRegistry,
+                                functions);
+                    } catch (Exception e) {
+                        System.err.println("❌ Error executing function: " + e.getMessage());
+                    }
+                } else {
+                    System.err.println("⚠️ No handler registered for function: " + functionName);
+                    String content = message.getContent() != null ? message.getContent()
+                            : "I'm not able to access that function.";
+                    System.out.println(content);
+                    chatHistory.add(new ChatRequestAssistantMessage(content));
+                }
+            } else {
+                String content = message.getContent();
+                System.out.println(content);
+                chatHistory.add(new ChatRequestAssistantMessage(content));
+            }
+        } else {
+            System.out.println("No response received.");
         }
     }
 
