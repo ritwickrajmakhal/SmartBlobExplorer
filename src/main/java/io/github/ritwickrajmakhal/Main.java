@@ -1,11 +1,21 @@
 package io.github.ritwickrajmakhal;
 
 import io.github.cdimascio.dotenv.Dotenv;
+import io.github.ritwickrajmakhal.handlers.BatchDeleteHandler;
+import io.github.ritwickrajmakhal.handlers.BatchDownloadHandler;
+import io.github.ritwickrajmakhal.handlers.BatchUploadHandler;
+import io.github.ritwickrajmakhal.handlers.CopyBlobHandler;
+import io.github.ritwickrajmakhal.handlers.CreateSnapshotHandler;
 import io.github.ritwickrajmakhal.handlers.DeleteBlobHandler;
 import io.github.ritwickrajmakhal.handlers.DownloadBlobHandler;
+import io.github.ritwickrajmakhal.handlers.GenerateSasUrlHandler;
+import io.github.ritwickrajmakhal.handlers.ListBlobsHandler;
+import io.github.ritwickrajmakhal.handlers.ListLocalFilesHandler;
 import io.github.ritwickrajmakhal.handlers.RenameBlobHandler;
 import io.github.ritwickrajmakhal.handlers.SearchBlobsHandler;
 import io.github.ritwickrajmakhal.handlers.UploadFileHandler;
+import io.github.ritwickrajmakhal.handlers.UploadDirectoryHandler;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -115,7 +125,6 @@ public class Main {
             System.err.println("❌ Error: " + e.getMessage());
             System.exit(1);
         } finally {
-            logger.info("Cleaning up resources");
             searchClient.cleanUp();
             sc.close();
             logger.info("SmartBlob Explorer application terminated");
@@ -149,19 +158,53 @@ public class Main {
         final List<FunctionDefinition> functions = FunctionRegistry.getBlobFunctionDefinitions();
 
         // Initialize function registry
-        logger.debug("Initializing function registry");
         final FunctionCallRegistry functionRegistry = new FunctionCallRegistry();
 
-        // Register function handlers
-        logger.debug("Registering function handlers");
+        // Register basic blob operation function handlers
         functionRegistry.registerHandler("search_blobs", new SearchBlobsHandler(searchClient));
         functionRegistry.registerHandler("upload_file", new UploadFileHandler(blobClient, searchClient));
         functionRegistry.registerHandler("download_blob", new DownloadBlobHandler(blobClient));
         functionRegistry.registerHandler("delete_blob", new DeleteBlobHandler(blobClient, searchClient));
         functionRegistry.registerHandler("rename_blob", new RenameBlobHandler(blobClient, searchClient));
 
+        // Register batch operation handlers
+        functionRegistry.registerHandler("batch_upload", new BatchUploadHandler(blobClient, searchClient));
+        functionRegistry.registerHandler("batch_download", new BatchDownloadHandler(blobClient));
+        functionRegistry.registerHandler("batch_delete", new BatchDeleteHandler(blobClient, searchClient));
+
+        // Register additional blob management handlers
+        functionRegistry.registerHandler("list_blobs", new ListBlobsHandler(blobClient));
+        functionRegistry.registerHandler("copy_blob", new CopyBlobHandler(blobClient));
+        functionRegistry.registerHandler("create_snapshot", new CreateSnapshotHandler(blobClient));
+        functionRegistry.registerHandler("generate_sas_url", new GenerateSasUrlHandler(blobClient));
+        functionRegistry.registerHandler("list_local_files", new ListLocalFilesHandler(blobClient));
+        functionRegistry.registerHandler("upload_directory", new UploadDirectoryHandler(blobClient, searchClient));
+
         chatHistory.add(new ChatRequestSystemMessage(
-                "You are a helpful assistant. You can answer questions about Azure Blob Storage using the knowledge base."));
+                "You are an intelligent assistant for SmartBlob Explorer, a tool that enhances Azure Blob Storage with AI-powered search and document analysis capabilities. Your role is to help users manage and explore their documents through natural language interaction.\r\n"
+                        + //
+                        "\r\n" + //
+                        "You can assist with:\r\n" + //
+                        "- Uploading files to blob storage (local files or from URLs)\r\n" + //
+                        "- Searching through document content using natural language queries\r\n" + //
+                        "- Downloading files from blob storage to the local system\r\n" + //
+                        "- Renaming or moving documents within the storage container\r\n" + //
+                        "- Deleting documents from storage\r\n" + //
+                        "- Batch operations for uploading, downloading, or deleting multiple files at once\r\n" + //
+                        "- Listing blobs with filtering by prefix or regex patterns\r\n" + //
+                        "- Copying blobs while preserving the original\r\n" + //
+                        "- Creating point-in-time snapshots of blobs for version control\r\n" + //
+                        "- Generating temporary shared access signature (SAS) URLs for sharing files\r\n" + //
+                        "- Extracting insights from documents including:\r\n" + //
+                        "  * People, organizations, and locations mentioned in documents\r\n" + //
+                        "  * Key phrases and important concepts\r\n" + //
+                        "  * Document summarization and content analysis\r\n" + //
+                        "  * Text extracted from images through OCR\r\n" + //
+                        "\r\n" + //
+                        "When users ask about documents, you'll use Azure AI Search to find relevant content and present results in a helpful, organized way. If users want to manipulate files, you'll determine which function to call and execute it on their behalf.\r\n"
+                        + //
+                        "\r\n" + //
+                        "Respond conversationally but efficiently, focusing on accurately fulfilling the user's document management needs. When appropriate, suggest related capabilities that might help them accomplish their goals more effectively."));
 
         System.out.println("\n✨ Interactive chat started. Type your message or commands.");
         System.out.println("Type /? for help or /exit to quit.\n");
@@ -179,22 +222,20 @@ public class Main {
                 continue;
             } else if (userInput.equalsIgnoreCase("/?") || userInput.equalsIgnoreCase("/help")) {
                 displayHelp();
-                logger.debug("Help information displayed");
+                continue;
+            } else if (userInput.isEmpty()) {
                 continue;
             }
 
             try {
                 // Add user message to history
-                logger.debug("Processing user input: {}", userInput);
                 chatHistory.add(new ChatRequestUserMessage(userInput));
 
                 if (chatHistory.size() > 10) {
-                    logger.debug("Trimming chat history to last 10 messages");
                     chatHistory = chatHistory.subList(chatHistory.size() - 10, chatHistory.size());
                 }
 
                 // Get response from OpenAI
-                logger.debug("Requesting completion from OpenAI");
                 final ChatCompletions chatCompletions = client.getChatCompletions(
                         dotenv.get("AZURE_AI_MODEL_DEPLOYMENT"),
                         new ChatCompletionsOptions(chatHistory)
@@ -203,53 +244,43 @@ public class Main {
                                 .setTopP(0.95).setFunctions(functions).setFunctionCall(FunctionCallConfig.AUTO));
 
                 if (!chatCompletions.getChoices().isEmpty()) {
-                    final ChatResponseMessage responseMessage = chatCompletions.getChoices().get(0).getMessage();
+                    final ChatResponseMessage responseMessage = chatCompletions.getChoices().getFirst().getMessage();
 
                     if (responseMessage.getFunctionCall() != null) {
                         final String functionName = responseMessage.getFunctionCall().getName();
                         final String arguments = responseMessage.getFunctionCall().getArguments();
 
                         logger.info("Function call detected: {}", functionName);
-                        System.out.println("🔧 Calling function: " + functionName);
 
                         // Execute the function using the registry
-                        if (functionRegistry.hasHandler(functionName)) {
-                            try {
-                                logger.debug("Executing function: {} with arguments: {}", functionName, arguments);
-                                final String functionResponse = functionRegistry.executeFunction(functionName,
-                                        arguments);
-                                logger.debug("Function executed successfully");
+                        try {
+                            final String functionResponse = functionRegistry.executeFunction(functionName,
+                                    arguments);
 
-                                // Add function call and response to chat history
-                                chatHistory.add(new ChatRequestAssistantMessage(responseMessage.getContent())
-                                        .setFunctionCall(responseMessage.getFunctionCall()));
-                                chatHistory.add(new ChatRequestFunctionMessage(functionName, functionResponse));
+                            // Add function call and response to chat history
+                            chatHistory.add(new ChatRequestAssistantMessage(responseMessage.getContent())
+                                    .setFunctionCall(responseMessage.getFunctionCall()));
+                            chatHistory.add(new ChatRequestFunctionMessage(functionName, functionResponse));
 
-                                // Get a final response from the model
-                                logger.debug("Requesting follow-up completion from OpenAI");
-                                final ChatCompletions followUpCompletions = client.getChatCompletions(
-                                        dotenv.get("AZURE_AI_MODEL_DEPLOYMENT"),
-                                        new ChatCompletionsOptions(chatHistory)
-                                                .setMaxTokens(4096)
-                                                .setTemperature(0.7)
-                                                .setFunctions(functions)
-                                                .setFunctionCall(FunctionCallConfig.AUTO));
+                            // Get a final response from the model
+                            final ChatCompletions followUpCompletions = client.getChatCompletions(
+                                    dotenv.get("AZURE_AI_MODEL_DEPLOYMENT"),
+                                    new ChatCompletionsOptions(chatHistory)
+                                            .setMaxTokens(4096)
+                                            .setTemperature(0.7)
+                                            .setFunctions(functions)
+                                            .setFunctionCall(FunctionCallConfig.AUTO));
 
-                                // Process the follow-up response (recursive)
-                                processCompletionResponse(followUpCompletions, chatHistory, client, functionRegistry,
-                                        functions, 0);
-                            } catch (Exception e) {
-                                logger.error("Error executing function: {}", functionName, e);
-                                System.err.println("❌ Error executing function: " + e.getMessage());
-                            }
-                        } else {
-                            logger.warn("No handler registered for function: {}", functionName);
-                            System.err.println("⚠️ No handler registered for function: " + functionName);
+                            // Process the follow-up response (recursive)
+                            processCompletionResponse(followUpCompletions, chatHistory, client, functionRegistry,
+                                    functions, 0);
+                        } catch (Exception e) {
+                            logger.error("Error executing function: {}", functionName, e);
+                            System.err.println("❌ Error executing function: " + e.getMessage());
                         }
                     } else {
                         // Regular text response
                         final String content = responseMessage.getContent();
-                        logger.debug("Received text response from model");
                         System.out.println(content);
                         chatHistory.add(new ChatRequestAssistantMessage(content));
                     }
@@ -307,27 +338,22 @@ public class Main {
         }
 
         if (!completions.getChoices().isEmpty()) {
-            final ChatResponseMessage message = completions.getChoices().get(0).getMessage();
+            final ChatResponseMessage message = completions.getChoices().getFirst().getMessage();
 
             if (message.getFunctionCall() != null) {
                 final String functionName = message.getFunctionCall().getName();
                 final String arguments = message.getFunctionCall().getArguments();
 
                 logger.info("Processing function call in response: {}", functionName);
-                System.out.println("🔧 Calling function: " + functionName);
 
                 if (functionRegistry.hasHandler(functionName)) {
                     try {
-                        logger.debug("Executing function: {} with arguments: {}", functionName, arguments);
                         final String functionResponse = functionRegistry.executeFunction(functionName, arguments);
-                        logger.debug("Function executed successfully");
 
                         chatHistory.add(new ChatRequestAssistantMessage(message.getContent())
                                 .setFunctionCall(message.getFunctionCall()));
                         chatHistory.add(new ChatRequestFunctionMessage(functionName, functionResponse));
 
-                        logger.debug("Requesting follow-up completion from OpenAI at recursion depth: {}",
-                                recursionDepth + 1);
                         final ChatCompletions followUpCompletions = client.getChatCompletions(
                                 dotenv.get("AZURE_AI_MODEL_DEPLOYMENT"),
                                 new ChatCompletionsOptions(chatHistory)
@@ -344,7 +370,6 @@ public class Main {
                     }
                 } else {
                     logger.warn("No handler registered for function: {}", functionName);
-                    System.err.println("⚠️ No handler registered for function: " + functionName);
                     final String content = message.getContent() != null ? message.getContent()
                             : "I'm not able to access that function.";
                     System.out.println(content);
@@ -352,7 +377,6 @@ public class Main {
                 }
             } else {
                 final String content = message.getContent();
-                logger.debug("Received text response from model at recursion depth: {}", recursionDepth);
                 System.out.println(content);
                 chatHistory.add(new ChatRequestAssistantMessage(content));
             }

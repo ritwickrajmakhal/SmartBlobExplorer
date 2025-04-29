@@ -335,6 +335,6 @@ public class SkillsetConfig {
         public static CognitiveServicesAccountKey getCognitiveServicesConfig() {
                 return new CognitiveServicesAccountKey(dotenv.get("COGNITIVE_SERVICE_ACCOUNT_KEY"))
                                 .setDescription(
-                                                "/subscriptions/fd00280e-c83c-4071-88a3-4d4e0aa6aa2d/resourceGroups/my-ai-resources/providers/Microsoft.CognitiveServices/accounts/smart-blob-search-ai");
+                                                "This service is used to perform various cognitive tasks such as OCR, image analysis, and language detection.");
         }
 }

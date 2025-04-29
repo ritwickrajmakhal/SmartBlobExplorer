@@ -99,7 +99,7 @@ public class SearchBlobsHandler implements FunctionHandler {
     public String execute(final JsonNode args) throws Exception {
         final String query = args.has("query") ? args.get("query").asText() : "";
         final int maxResults = args.has("maxResults") ? args.get("maxResults").asInt() : 5;
-        final boolean includeContent = args.has("includeContent") ? args.get("includeContent").asBoolean() : false;
+        final boolean includeContent = args.has("includeContent") && args.get("includeContent").asBoolean();
 
         // Execute the search
         final List<Map<String, Object>> searchResults = searchClient.search(query, maxResults);
@@ -128,7 +128,7 @@ public class SearchBlobsHandler implements FunctionHandler {
             // Include a content summary if requested
             if (includeContent && result.containsKey("merged_content")) {
                 final String content = result.get("merged_content").toString();
-                filteredBlob.put("contentSummary", truncateContent(content, 300));
+                filteredBlob.put("contentSummary", truncateContent(content));
             }
 
             // Highlight snippets if available
@@ -192,13 +192,12 @@ public class SearchBlobsHandler implements FunctionHandler {
      * long
      * for display purposes.
      *
-     * @param content   The content string to truncate
-     * @param maxLength The maximum allowed length
+     * @param content The content string to truncate
      * @return The truncated string, possibly with an ellipsis appended
      */
-    private String truncateContent(final String content, final int maxLength) {
+    private String truncateContent(final String content) {
         if (content == null)
             return "";
-        return content.length() <= maxLength ? content : content.substring(0, maxLength) + "...";
+        return content.length() <= 300 ? content : content.substring(0, 300) + "...";
     }
 }

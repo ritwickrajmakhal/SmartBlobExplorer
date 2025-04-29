@@ -1,6 +1,7 @@
 package io.github.ritwickrajmakhal;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -13,7 +14,6 @@ import com.azure.search.documents.indexes.SearchIndexClient;
 import com.azure.search.documents.indexes.SearchIndexClientBuilder;
 import com.azure.search.documents.indexes.SearchIndexerClient;
 import com.azure.search.documents.indexes.SearchIndexerClientBuilder;
-import com.azure.search.documents.indexes.models.DataChangeDetectionPolicy;
 import com.azure.search.documents.indexes.models.SearchField;
 import com.azure.search.documents.indexes.models.SearchIndex;
 import com.azure.search.documents.indexes.models.SearchIndexer;
@@ -23,7 +23,6 @@ import com.azure.search.documents.indexes.models.SearchIndexerDataSourceType;
 import com.azure.search.documents.indexes.models.SearchIndexerSkill;
 import com.azure.search.documents.indexes.models.SearchIndexerSkillset;
 import com.azure.search.documents.models.SearchOptions;
-import com.azure.search.documents.models.SearchResult;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.ritwickrajmakhal.config.SearchIndexConfig;
@@ -123,41 +122,33 @@ public class AzureSearchClient {
      */
     public AzureSearchClient(final String blobStorageConnectionString, final String containerName,
             final String folder) {
-        logger.debug("Initializing AzureSearchClient with container: {} and folder: {}", containerName, folder);
         this.blobStorageConnectionString = blobStorageConnectionString;
         this.containerName = containerName;
         this.folder = folder;
 
         // Create search indexer client
-        logger.debug("Creating search indexer client");
         indexerClient = new SearchIndexerClientBuilder()
                 .endpoint(SEARCH_ENDPOINT)
                 .credential(new AzureKeyCredential(SEARCH_API_KEY))
                 .buildClient();
         // Create search index client
-        logger.debug("Creating search index client");
         indexClient = new SearchIndexClientBuilder()
                 .endpoint(SEARCH_ENDPOINT)
                 .credential(new AzureKeyCredential(SEARCH_API_KEY))
                 .buildClient();
 
         // Create a data source for blob storage
-        logger.debug("Creating blob data source");
         dataSource = createBlobDataSource(indexerClient);
 
         // Create a skillsset
-        logger.debug("Creating skillset");
         skillset = createSkillset(indexerClient);
 
         // Create an index
-        logger.debug("Creating index");
         index = createIndex(indexClient);
 
         // Create an indexer that uses the skillset and data source and loads the index
-        logger.debug("Creating search indexer");
         indexer = createSearchIndexer(indexerClient, dataSource, index, skillset);
 
-        logger.debug("Creating search client for index: {}", index.getName());
         searchClient = new SearchClientBuilder()
                 .endpoint(SEARCH_ENDPOINT)
                 .credential(new AzureKeyCredential(SEARCH_API_KEY))
@@ -177,7 +168,6 @@ public class AzureSearchClient {
      * @return The created or updated skillset
      */
     private static SearchIndexerSkillset createSkillset(final SearchIndexerClient client) {
-        logger.debug("Creating skillset with default skills");
         List<SearchIndexerSkill> skills = SkillsetConfig.getDefaultSkills();
         SearchIndexerSkillset skillset = new SearchIndexerSkillset("skillset-" + uuid, skills)
                 .setDescription("Skillset for testing default configuration")
@@ -197,13 +187,11 @@ public class AzureSearchClient {
      * @return The created or updated search index
      */
     private static SearchIndex createIndex(final SearchIndexClient client) {
-        logger.debug("Creating search index with default fields");
         List<SearchField> fields = SearchIndexConfig.getDefaultFields();
         // Index definition
         SearchIndex index = new SearchIndex("index-" + uuid, fields);
 
         // Set Suggester
-        logger.debug("Setting default suggester for index");
         index.setSuggesters(SearchIndexConfig.getDefaultSuggester());
 
         return client.createOrUpdateIndex(index);
@@ -230,7 +218,6 @@ public class AzureSearchClient {
 
         // Use the SearchIndexerConfig to create and configure the indexer
         String indexerName = "indexer-" + uuid;
-        logger.debug("Creating search indexer: {}", indexerName);
         return SearchIndexerConfig.createIndexer(
                 indexerClient,
                 indexerName,
@@ -245,31 +232,24 @@ public class AzureSearchClient {
      * The data source defines the connection to an external data store such as
      * blob storage, and optionally includes change detection policies.
      *
-     * @param client                    The search indexer client to use
-     * @param type                      The type of data source (e.g., blob, table,
-     *                                  cosmos)
-     * @param connectionString          The connection string for the data source
-     * @param container                 The container information for the data
-     *                                  source
-     * @param dataChangeDetectionPolicy Optional policy for detecting changes in the
-     *                                  data source
+     * @param client           The search indexer client to use
+     * @param connectionString The connection string for the data source
+     * @param container        The container information for the data
+     *                         source
      * @return The created or updated data source connection
      */
     private static SearchIndexerDataSourceConnection createDataSource(
             final SearchIndexerClient client,
-            final SearchIndexerDataSourceType type,
             final String connectionString,
-            final SearchIndexerDataContainer container,
-            final DataChangeDetectionPolicy dataChangeDetectionPolicy) {
+            final SearchIndexerDataContainer container) {
 
         String datasourceName = "datasource-" + uuid;
-        logger.debug("Creating data source: {}", datasourceName);
         SearchIndexerDataSourceConnection dataSource = new SearchIndexerDataSourceConnection(
                 datasourceName,
-                type,
+                SearchIndexerDataSourceType.AZURE_BLOB,
                 connectionString,
                 container)
-                .setDataChangeDetectionPolicy(dataChangeDetectionPolicy);
+                .setDataChangeDetectionPolicy(null);
 
         try {
             return client.createOrUpdateDataSourceConnection(dataSource);
@@ -292,26 +272,23 @@ public class AzureSearchClient {
     private SearchIndexerDataSourceConnection createBlobDataSource(final SearchIndexerClient client) {
         SearchIndexerDataContainer dataContainer;
         if (folder == "") {
-            logger.debug("Creating data container for whole blob container: {}", containerName);
             dataContainer = new SearchIndexerDataContainer(containerName);
         } else {
-            logger.debug("Creating data container for folder: {} in container: {}", folder, containerName);
             dataContainer = new SearchIndexerDataContainer(containerName).setQuery(folder);
         }
         return createDataSource(
                 client,
-                SearchIndexerDataSourceType.AZURE_BLOB,
                 this.blobStorageConnectionString,
-                dataContainer,
-                null);
+                dataContainer
+        );
     }
 
     /**
      * Performs a search against the index with the given query string.
      * <p>
      * This method executes a search operation against the Azure Search index and
-     * returns
-     * the results as a list of maps, where each map represents a matching document.
+     * returns the results as a list of maps, where each map represents a matching
+     * document.
      *
      * @param query      The search query string
      * @param maxResults The maximum number of results to return
@@ -319,16 +296,111 @@ public class AzureSearchClient {
      *         represents a document
      */
     public List<Map<String, Object>> search(String query, int maxResults) {
-        logger.info("Searching for: '{}' with max results: {}", query, maxResults);
+        return search(query, maxResults, 0);
+    }
+
+    /**
+     * Performs a paginated search against the index with the given query string.
+     * <p>
+     * This method executes a search operation against the Azure Search index with
+     * pagination support and returns the results as a list of maps, where each map
+     * represents a matching document.
+     *
+     * @param query      The search query string
+     * @param pageSize   The number of results to return per page
+     * @param pageOffset The skip/offset for pagination (0 for first page)
+     * @return A list of maps containing the search results, where each map
+     *         represents a document
+     */
+    public List<Map<String, Object>> search(String query, int pageSize, int pageOffset) {
+        logger.info("Searching for: '{}' with page size: {}, offset: {}", query, pageSize, pageOffset);
+
+        // Ensure valid page parameters
+        int size = pageSize > 0 ? pageSize : 50; // Default to 50 if not specified
+        int offset = Math.max(0, pageOffset); // Ensure non-negative offset
+
         SearchOptions options = new SearchOptions()
-                .setTop(maxResults);
+                .setTop(size)
+                .setSkip(offset)
+                .setIncludeTotalCount(true);
 
         List<Map<String, Object>> results = new ArrayList<>();
-        for (SearchResult result : searchClient.search(query, options, Context.NONE)) {
-            results.add(result.getDocument(Map.class));
+        try {
+            searchClient.search(query, options, Context.NONE).forEach(result -> {
+                results.add(result.getDocument(Map.class));
+            });
+            logger.info("Search returned {} documents", results.size());
+        } catch (Exception e) {
+            logger.error("Error performing search operation", e);
         }
-        logger.debug("Search returned {} results", results.size());
+
         return results;
+    }
+
+    /**
+     * Gets the total count of documents that match a query.
+     * <p>
+     * This method is useful for calculating pagination information before fetching
+     * the actual results.
+     *
+     * @param query The search query string
+     * @return The total count of matching documents, or -1 if an error occurred
+     */
+    public long getSearchResultCount(String query) {
+        logger.info("Getting count for search query: '{}'", query);
+
+        try {
+            SearchOptions options = new SearchOptions()
+                    .setTop(1) // Minimum results needed
+                    .setIncludeTotalCount(true);
+
+            return searchClient.search(query, options, Context.NONE).getTotalCount();
+        } catch (Exception e) {
+            logger.error("Error getting search result count", e);
+            return -1;
+        }
+    }
+
+    /**
+     * Returns a map with pagination information for a search query.
+     * <p>
+     * This method provides metadata that can be used to build pagination UI
+     * and handle page navigation.
+     *
+     * @param query       The search query string
+     * @param pageSize    The number of results per page
+     * @param currentPage The current page number (0-based)
+     * @return A map containing pagination metadata
+     */
+    public Map<String, Object> getSearchPaginationInfo(String query, int pageSize, int currentPage) {
+        logger.info("Getting pagination info for: '{}', pageSize: {}, currentPage: {}",
+                query, pageSize, currentPage);
+
+        Map<String, Object> paginationInfo = new HashMap<>();
+
+        try {
+            long totalCount = getSearchResultCount(query);
+            if (totalCount < 0) {
+                throw new RuntimeException("Could not retrieve search result count");
+            }
+
+            int size = pageSize > 0 ? pageSize : 50;
+            int totalPages = (int) Math.ceil((double) totalCount / size);
+            int current = Math.max(0, Math.min(currentPage, totalPages - 1));
+
+            paginationInfo.put("totalCount", totalCount);
+            paginationInfo.put("pageSize", size);
+            paginationInfo.put("totalPages", totalPages);
+            paginationInfo.put("currentPage", current);
+            paginationInfo.put("hasNextPage", current < totalPages - 1);
+            paginationInfo.put("hasPreviousPage", current > 0);
+
+            return paginationInfo;
+        } catch (Exception e) {
+            logger.error("Error calculating pagination info", e);
+            paginationInfo.put("error", e.getMessage());
+            return paginationInfo;
+        }
     }
 
     /**
@@ -370,19 +442,15 @@ public class AzureSearchClient {
         logger.info("Cleaning up search resources");
 
         try {
-            logger.debug("Deleting data source: {}", datasourceName);
             indexerClient.deleteDataSourceConnection(datasourceName);
             logger.info("Data Source {} deleted successfully", datasourceName);
 
-            logger.debug("Deleting index: {}", indexName);
             indexClient.deleteIndex(indexName);
             logger.info("Index {} deleted successfully", indexName);
 
-            logger.debug("Deleting skillset: {}", skillsetName);
             indexerClient.deleteSkillset(skillsetName);
             logger.info("Skillset {} deleted successfully", skillsetName);
 
-            logger.debug("Deleting indexer: {}", indexerName);
             indexerClient.deleteIndexer(indexerName);
             logger.info("Indexer {} deleted successfully", indexerName);
 

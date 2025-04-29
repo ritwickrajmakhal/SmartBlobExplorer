@@ -29,4 +29,7 @@
     
     <!-- Configure specific packages -->
     <logger name="io.github.ritwickrajmakhal" level="DEBUG" />
+    
+    <!-- Suppress Netty version mismatch warnings -->
+    <logger name="com.azure.core.http.netty.implementation.NettyUtility" level="ERROR" />
 </configuration>
