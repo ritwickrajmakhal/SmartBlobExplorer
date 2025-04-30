@@ -23,7 +23,6 @@ The application uses AI cognitive skills to extract text, key phrases, entities,
 - **Cognitive Skills**: Use OCR to extract text from images within documents
 - **Document Management**: Download, delete, or rename documents with simple commands
 - **Batch Operations**: Support for batch uploads, downloads, and deletions
-- **Manual Indexer Control**: Ability to manually trigger the indexer to update search results
 
 ## Architecture
 
@@ -106,6 +105,9 @@ The application sets up a data source, skillset, index, and indexer in Azure AI 
   - Azure OpenAI service or Microsoft OpenAI service
   - Azure Cognitive Services (for document analysis)
 
+> [!NOTE]  
+> Ensure that the **Azure AI Search service** and **Azure Cognitive Services** are configured in the same region.
+
 ## Setup
 
 ### 1. Clone the repository
@@ -120,13 +122,13 @@ cd SmartBlobExplorer
 Create a `.env` file in the project root with the following environment variables:
 
 ```
-AZURE_AI_API_KEY=
-AZURE_AI_ENDPOINT=
-AZURE_AI_MODEL=
-AZURE_AI_MODEL_DEPLOYMENT=
-AZURE_AI_SEARCH_API_KEY=
-AZURE_AI_SEARCH_ENDPOINT=
-COGNITIVE_SERVICE_ACCOUNT_KEY=
+AZURE_AI_API_KEY=your-azure-openai-api-key-here
+AZURE_AI_ENDPOINT=your-azure-openai-endpoint-url
+AZURE_AI_MODEL=your-azure-ai-model-name
+AZURE_AI_MODEL_DEPLOYMENT=your-azure-ai-model-deployment-name
+AZURE_AI_SEARCH_ENDPOINT=your-azure-search-endpoint-url
+AZURE_AI_SEARCH_API_KEY=your-azure-search-api-key
+COGNITIVE_SERVICE_ACCOUNT_KEY=your-cognitive-service-account-key
 ```
 
 ### 3. Build the project
@@ -153,32 +155,29 @@ On startup, the application will prompt you for:
 Once the application is running, you can interact with it using natural language:
 
 ```
->>> Upload the document C:\Users\Documents\report.pdf
-🔧 Calling function: upload_file
-File uploaded successfully: C:\Users\Documents\report.pdf
-Search index updated successfully
+🧠 Welcome to SmartBlob Explorer!
+Your intelligent CLI assistant for exploring Azure Blob Storage.
+--------------------------------------------------------------
+Please enter your storage account connection string: DefaultEndpointsProtocol=https;AccountName=**
+Please enter your container name: test
+Please enter your folder (path) if any otherwise press enter:
 
->>> Search for documents about climate change
-🔧 Calling function: search_blobs
-I found 3 documents related to climate change:
-1. climate_report_2024.pdf - Contains key phrases: global warming, carbon emissions, climate policy
-2. environmental_impact.docx - Mentions organizations: EPA, IPCC, UN Environment Programme
-3. sustainability_plan.pptx - Contains content discussing climate change mitigation strategies
+✨ Interactive chat started. Type your message or commands.
+Type /? for help or /exit to quit.
 
->>> Download the climate report
-🔧 Calling function: download_blob
-I've downloaded climate_report_2024.pdf to your current directory.
+>>> List all files in the container
+There is currently one file in the container:
 
->>> Show page 2 of search results for financial reports
-🔧 Calling function: search_blobs
-Showing page 2 of 5 (10 results per page)
-11. q1_financial_statement.xlsx - Contains financial data from Q1 2025
-12. annual_report_2024.pdf - Annual financial summary with revenue projections
-...
+- **Photograph.jpg**
+  - Size: 7.459 KB
+  - Last Modified: April 29, 2025
 
->>> Update the search index
-🔧 Calling function: run_indexer
-Indexer run triggered successfully. New or modified documents will be indexed.
+Let me know if you need to perform any actions with this file!
+>>> Upload 10th Admit.pdf from C:\Users\ritwi\Downloads demo files.
+The file **10th Admit.pdf** has been successfully uploaded to the container, and the search index has been updated. Let me know if you'd like to search, organize, or perform other actions with your files!
+>>>
+
+
 ```
 
 ### Available Commands
@@ -210,7 +209,6 @@ The application supports the following operations through natural language comma
   - Basic search
   - Paginated search
   - Get pagination information
-- **Update Index**: Manually trigger the indexer to update search results
 - **List Blobs**: View all blobs in a container or folder
 - **List Local Files**: View files in a local directory
 
